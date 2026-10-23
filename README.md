@@ -1,93 +1,308 @@
-# WebTrafficeAnalyzer
+# Web Traffic Analyzer & DDoS / Bot Detector
 
+Zaawansowane, wysokowydajne narzędzie w języku Python do automatycznej analizy logów serwerów WWW (Apache / HTTPD / Nginx), stworzone z myślą o wykrywaniu ataków DDoS, anomalii ruchu, botnetów, złośliwych skanerów oraz agresywnego scrapingu (AI/SEO).
 
+Program generuje interaktywne raporty HTML z mapami geograficznymi (OpenStreetMap / Leaflet), dynamicznymi wykresami z obsługą przybliżania osi czasu (Chart.js + Pan/Zoom) oraz gotowymi regułami blokującymi dla serwera Apache i firewalla systemowego (`iptables` / `ipset` / `fail2ban`).
 
-## Getting started
+---
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+## Spis treści
+- [Główne Możliwości](#główne-możliwości)
+- [Wymagania i Instalacja](#wymagania-i-instalacja)
+- [Szybki Start](#szybki-start)
+- [Parametry Wiersza Poleceń (CLI)](#parametry-wiersza-poleceń-cli)
+- [Przykłady Użycia](#przykłady-użycia)
+- [Zastosowane Algorytmy i Metodologia](#zastosowane-algorytmy-i-metodologia)
+  - [1. Normalizacja i Filtrowanie Zasobów Statycznych](#1-normalizacja-i-filtrowanie-zasobów-statycznych)
+  - [2. Dynamiczne Progi Ruchu (Reguła 2 × Mediana)](#2-dynamiczne-progi-ruchu-reguła-2--mediana)
+  - [3. Klasyfikacja Behawioralna i Sygnaturowa (User-Agent)](#3-klasyfikacja-behawioralna-i-sygnaturowa-user-agent)
+  - [4. Algorytm Scoringu Zagrożeń (Threat Score 0–100%)](#4-algorytm-scoringu-zagrożeń-threat-score-0100)
+  - [5. Zautomatyzowana Diagnoza i Werdykt Globalny](#5-zautomatyzowana-diagnoza-i-werdykt-globalny)
+  - [6. Mechanizm Pracy na Żywym Serwerze i Pamięć Podręczna (Cache)](#6-mechanizm-pracy-na-żywym-serwerze-i-pamięć-podręczna-cache)
+- [Generowane Pliki i Raporty](#generowane-pliki-i-raporty)
+- [Licencja i Bezpieczeństwo](#licencja-i-bezpieczeństwo)
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+---
 
-## Add your files
+## Główne Możliwości
 
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+- **Analiza Skupiona na Treści:** Automatyczne oddzielenie zapytań o strony dynamiczne/HTML od zasobów statycznych (obrazki, CSS, JS, fonty, multimedia), co zapobiega zniekształcaniu statystyk ruchu.
+- **Dynamiczne Wykrywanie Anomalii:** Wyznaczanie progów nadmiernego obciążenia w oparciu o statystykę odporną na wartości odstające ($2 \times \text{mediana}$).
+- **Geolokalizacja Offline:** Integracja z bazami MaxMind GeoLite2 (`GeoLite2-Country.mmdb` oraz `GeoLite2-ASN.mmdb`) bez konieczności odpytywania zewnętrznych API.
+- **Zaawansowany Threat Scoring:** Wieloczynnikowa ocena ryzyka dla każdego podejrzanego adresu IP (0–100%) uwzględniająca błędy serwera (500/403/429), profil pobierania zasobów, rodzaj hostingu/chmury oraz sygnatury klientów.
+- **Gotowe Reguły Ochronne:** Automatyczny eksport listy złośliwych adresów IP do pliku tekstowego oraz reguł blokujących Apache (`Require not ip ...` i blokady `BrowserMatchNoCase`).
+- **Interaktywny Raport HTML:** 
+  - Mapa świata oraz szczegółowa mapa miast w Polsce (Leaflet + kafelki CartoDB Voyager z wyróżnieniem źródeł ataków na czerwono).
+  - Oś czasu rozkładu godzinowego z obsługą kółka myszy, gestów dotykowych, przesuwania (Pan) i paska narzędziowego.
+  - Wykresy kołowe i słupkowe (Kraje, Statusy HTTP, Operatorzy/ASN, Kategorie botów).
+  - Pełne, przeszukiwalne tabele DataTables ze stronicowaniem i sortowaniem.
+- **Zoptymalizowany dla Środowisk Produkcyjnych Linux:** Bezpieczny odczyt rosnących plików logów (kontrola snapshotu offsetu), natywna obsługa plików skompresowanych `.gz` oraz szybki cache JSON.
+
+---
+
+## Wymagania i Instalacja
+
+### Wymagania systemowe
+- Python 3.8 lub nowszy
+- System operacyjny: Linux (zalecany na produkcji) lub Windows / macOS
+
+### Instalacja bibliotek Python
+Zainstaluj wymagane pakiety za pomocą menedżera `pip`:
+
+```bash
+pip install geoip2 numpy
+```
+
+### Bazy danych GeoIP
+Program korzysta z bezpłatnych baz MaxMind GeoLite2 w formacie `.mmdb`:
+- `GeoLite2-Country.mmdb` (kraj pochodzenia i geolokalizacja)
+- `GeoLite2-ASN.mmdb` (dostawca Internetu / organizacja ASN)
+
+Bazy są automatycznie wyszukiwane w katalogu roboczym skryptu lub w standardowych ścieżkach systemowych Linux:
+- `/usr/share/GeoIP/`
+- `/var/lib/GeoIP/`
+- `/etc/httpd/`
+- `/etc/apache2/`
+
+---
+
+## Szybki Start
+
+### Podstawowe uruchomienie na serwerze Linux
+Domyślnie program przeszukuje katalog `/var/log/httpd` (lub bieżący) w poszukiwaniu plików logów:
+
+```bash
+python3 web_traffic_analyzer.py
+```
+
+### Analiza konkretnego pliku lub katalogu z maską
+```bash
+python3 web_traffic_analyzer.py -p /var/log/httpd -m "access_log*" -o /var/www/html/raport.html
+```
+
+---
+
+## Parametry Wiersza Poleceń (CLI)
+
+| Parametr krótki | Parametr długi | Domyślna wartość | Opis |
+| :--- | :--- | :--- | :--- |
+| `-p` | `--path` | `/var/log/httpd` | Ścieżka do katalogu z logami serwera lub do pojedynczego pliku logu. |
+| `-m` | `--mask` | `smartsite.mazovia.app-access.log*` | Maska nazw plików logów we wskazanym katalogu (np. `*access*.log*`, `access_log*`). |
+| `-l` | `--log` | `None` | Bezpośredni wzorzec pliku (kompatybilność wsteczna, np. `logs/*.log`). |
+| `-o` | `--output` / `--output-html` | `traffic_analysis_report.html` | Ścieżka docelowa wyjściowego raportu HTML lub katalog na wszystkie artefakty. |
+| `-b` | `--output-blacklist` | `blacklist_ips.txt` | Nazwa lub ścieżka pliku wyjściowego z blacklistą adresów IP. |
+| | `--output-apache-rules` | `apache_block_rules.conf` | Nazwa lub ścieżka pliku z regułami blokującymi dla Apache. |
+| `-d` | `--date` | `None` (wszystkie) | Filtrowanie wpisów po dacie w formacie `DD/Mon/YYYY` (np. `23/Oct/2026`). |
+| `-w` | `--whitelist` | `None` | Dodatkowe adresy IP lub podsieci CIDR do białej listy (oddzielone przecinkami). |
+| | `--whitelist-file` | `None` | Ścieżka do pliku tekstowego z adresami IP/CIDR zaufanymi (jeden wpis na linię). |
+| | `--url-threshold-mult` | `2.0` | Mnożnik mediany dla wyznaczania progu nadmiernego ruchu na URL. |
+| | `--ip-threshold-mult` | `2.0` | Mnożnik mediany dla wyznaczania progu anomalnego ruchu dla IP. |
+| | `--min-url-threshold` | `20.0` | Minimalna bezwzględna liczba żądań wymagana do zakwalifikowania URL jako anomalii. |
+| | `--min-ip-threshold` | `20.0` | Minimalna bezwzględna liczba żądań wymagana do zakwalifikowania IP jako anomalii. |
+| | `--cache-file` | `.traffic_analyzer_cache.json` | Ścieżka do pliku pamięci podręcznej parsowania logów. |
+| | `--no-cache` | `False` | Wyłącza pamięć podręczną (wymusza pełne parsowanie wszystkich plików od zera). |
+| | `--clear-cache` | `False` | Czyści istniejący plik pamięci podręcznej przed uruchomieniem analizy. |
+| | `--country-db` | `GeoLite2-Country.mmdb` | Własna ścieżka do bazy `GeoLite2-Country.mmdb`. |
+| | `--asn-db` | `GeoLite2-ASN.mmdb` | Własna ścieżka do bazy `GeoLite2-ASN.mmdb`. |
+| | `--max-lines` | `None` | Limit linii logu do przetworzenia (użyteczne przy szybkich testach na wielogigabajtowych plikach). |
+
+---
+
+## Przykłady Użycia
+
+### 1. Standardowa analiza produkcyjna z zapisem do katalogu publicznego WWW
+```bash
+python3 web_traffic_analyzer.py \
+    -p /var/log/httpd \
+    -m "access_log*" \
+    -o /var/www/html/security/traffic_report.html
+```
+
+### 2. Wykluczenie własnych adresów IP / sieci biurowej (Biała lista)
+```bash
+python3 web_traffic_analyzer.py \
+    -p /var/log/httpd \
+    -w "217.153.27.58,192.168.1.0/24,10.0.0.0/8" \
+    -o raport.html
+```
+
+### 3. Analiza logów z wybranego dnia
+```bash
+python3 web_traffic_analyzer.py \
+    -p logs/ \
+    -m "*.log" \
+    -d "23/Oct/2026"
+```
+
+### 4. Wymuszenie ponownego przetworzenia bez pamięci podręcznej (No-Cache)
+```bash
+python3 web_traffic_analyzer.py -p logs/ --no-cache
+```
+
+---
+
+## Zastosowane Algorytmy i Metodologia
+
+Program realizuje wieloetapowy potok analityczny (*pipeline*), łączący metody statystyki nieparametrycznej, analizy behawioralnej i heurystyki cyberbezpieczeństwa.
 
 ```
-cd existing_repo
-git remote add origin https://gitlab.bit-sa.pl/bit/administracja/webtrafficeanalyzer.git
-git branch -M main
-git push -uf origin main
+       [ Pliki Logów Apache (tekstowe / .gz) ]
+                          │
+                          ▼
+ ┌──────────────────────────────────────────────────┐
+ │ 1. Filtrowanie i Normalizacja                    │
+ │  - Wykluczenie adresów IP z Whitelist (CIDR)     │
+ │  - Podział: Żądania Dynamiczne vs Statyczne      │
+ │  - Snapshot rozmiaru plików (ochrona live-tail)  │
+ └────────────────────────┬─────────────────────────┘
+                          │
+                          ▼
+ ┌──────────────────────────────────────────────────┐
+ │ 2. Dynamiczne Progi Statystyczne (2 × Mediana)   │
+ │  - Próg dla URL-i: max(2 * Mediana, 20)          │
+ │  - Próg dla Sekcji: max(2 * Mediana, 40)         │
+ │  - Próg dla IP: max(2 * Mediana, 20)             │
+ └────────────────────────┬─────────────────────────┘
+                          │
+                          ▼
+ ┌──────────────────────────────────────────────────┐
+ │ 3. Identyfikacja i Wzbogacanie Danych IP         │
+ │  - Offline GeoIP (Kraj, Miasto, Współrzędne)     │
+ │  - Operator sieci i ASN (MaxMind GeoLite2)       │
+ │  - Klasyfikacja User-Agent (Wyszukiwarki / Boty) │
+ └────────────────────────┬─────────────────────────┘
+                          │
+                          ▼
+ ┌──────────────────────────────────────────────────┐
+ │ 4. Silnik Oceny Zagrożeń (Threat Score 0–100%)   │
+ │  - Błędy HTTP 500/403/429 (Error Rate > 15%)     │
+ │  - Narzędzia skryptowe CLI (cURL, urllib itp.)   │
+ │  - Zautomatyzowane przeglądarki Headless         │
+ │  - Brak pobierania zasobów CSS/JS/grafik         │
+ │  - Centra danych / chmury (Azure, GCP, AWS itp.) │
+ └────────────────────────┬─────────────────────────┘
+                          │
+                          ▼
+ ┌──────────────────────────────────────────────────┐
+ │ 5. Eksport i Generowanie Wyników                 │
+ │  - Interaktywny Raport HTML z Mapami Leaflet     │
+ │  - Blacklista IP (blacklist_ips.txt)             │
+ │  - Reguły ochronne Apache (apache_block_rules)   │
+ └──────────────────────────────────────────────────┘
 ```
 
-## Integrate with your tools
+---
 
-* [Set up project integrations](https://gitlab.bit-sa.pl/bit/administracja/webtrafficeanalyzer/-/settings/integrations)
+### 1. Normalizacja i Filtrowanie Zasobów Statycznych
 
-## Collaborate with your team
+Ruch sieciowy generowany przez standardowe przeglądarki internetowe obejmuje dużą liczbę zapytań pomocniczych o pliki graficzne (`.png`, `.jpg`, `.webp`), arkusze stylów (`.css`), skrypty (`.js`), fonty (`.woff2`) czy mapy źródeł. 
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+- **Filtrowanie:** Wszystkie zasoby o rozszerzeniach statycznych są rejestrowane na poziomie metryk ogólnych, lecz **wykluczane z agregacji obciążenia podstron**.
+- **Identyfikacja scraperów:** Prawdziwy użytkownik pobiera stronę HTML wraz z towarzyszącymi jej assetami statycznymi. Boty i scrapery pobierają niemal wyłącznie surowy kod HTML (stosunek pobrań statycznych do dynamicznych $< 5\%$), co stanowi kluczowy wskaźnik behawioralny.
 
-## Test and Deploy
+---
 
-Use the built-in continuous integration in GitLab.
+### 2. Dynamiczne Progi Ruchu (Reguła 2 × Mediana)
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
+W analizie ruchu sieciowego średnia arytmetyczna ($\mu$) jest wysoce podatna na zakłócenia przez pojedyncze ekstremalne anomalie (np. milion zapytań z jednego bota zawyża średnią dla całej domeny). Dlatego program stosuje **medianę** ($\text{Med}$), będącą odporną miarą tendencji centralnej:
 
-***
+$$\text{Próg URL} = \max\left(2 \times \text{Mediana}(\text{Żądania dla wszystkich URL}), 20\right)$$
 
-# Editing this README
+$$\text{Próg IP} = \max\left(2 \times \text{Mediana}(\text{Żądania stron dla wszystkich IP odpytujących przeciążone URL}), 20\right)$$
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+Adresy IP i adresy URL przekraczające wyznaczone progi są natychmiast kwalifikowane do szczegółowej inspekcji.
 
-## Suggestions for a good README
+---
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+### 3. Klasyfikacja Behawioralna i Sygnaturowa (User-Agent)
 
-## Name
-Choose a self-explaining name for your project.
+Każde zapytanie analizowane jest pod kątem sygnatury `User-Agent` i przypisywane do jednej z kategorii:
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+1. **Oficjalne Wyszukiwarki (Search Engine Bots):** Googlebot, Bingbot, Yandex, DuckDuckGo, Baidu, Seznam itp. (oznaczane kolorem zielonym / bezpieczne).
+2. **Boty SEO i AI Scrapery:** Semrush, Ahrefs, DotBot, ByteSpider, GPTBot, ClaudeBot, CCBot itp.
+3. **Podejrzane Narzędzia Automatyzacji i CLI:** `HeadlessChrome`, `Puppeteer`, `Playwright`, `Selenium`, `Python-urllib`, `Python Requests`, `aiohttp`, `curl`, `Go-http-client`, `Postman`, `Wget`, `Scrapy` oraz pusty nagłówek User-Agent (`-`).
+4. **Ruch Użytkowników / Przeglądarek:** Chrome, Firefox, Safari, Edge, Opera.
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+---
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+### 4. Algorytm Scoringu Zagrożeń (Threat Score 0–100%)
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+Dla każdego adresu IP, który przekroczył próg anomalnego ruchu, wyliczany jest addytywny wskaźnik zagrożenia **Threat Score** na podstawie zestawu wag behawioralno-infrastrukturalnych:
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+| Kryterium / Symptom Zagrożenia | Waga Punktowa | Uzasadnienie |
+| :--- | :---: | :--- |
+| **Złośliwy / podejrzany User-Agent** | **+45 pkt** | Sygnatury `HeadlessChrome`, skrypty Python, cURL, Go-client, brak nagłówka UA. |
+| **Narzędzie skryptowe / scraper AI** | **+25 pkt** | Zautomatyzowane narzędzia niebędące wyszukiwarkami. |
+| **Brak pobierania zasobów statycznych** | **+25 pkt** | Pobrano $> 50$ podstron dynamicznych przy $< 5\%$ pobranych grafik/CSS/JS (behawior scrapera). |
+| **Wysoki wskaźnik błędów serwera** | **+20 pkt** | Ponad $15\%$ odpowiedzi to kody HTTP 500 (awaria aplikacji), 403 (próby włamań) lub 429 (przekroczenie limitów). |
+| **Pochodzenie z chmury / Datacenter** | **+20 pkt** | Ruch pochodzący z centrów danych (Microsoft Azure, AWS, Google Cloud, Hetzner, OVH, DigitalOcean itp.) zamiast sieci konsumenckich (ISP). |
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+#### Warunek kwalifikacji do Blacklisty (`blacklist_ips.txt`):
+Adres IP zostaje zakwalifikowany do natychmiastowej blokady, jeżeli:
+$$\text{Threat Score} \ge 50\% \quad \lor \quad (\text{Narzędzie CLI / Brak UA} \land \text{Ruch} \ge \text{Próg})$$
+*(przy automatycznym wykluczeniu adresów z Białej Listy oraz sieci prywatnych RFC 1918).*
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+---
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+### 5. Zautomatyzowana Diagnoza i Werdykt Globalny
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+Po zakończeniu agregacji silnik diagnostyczny dokonuje syntezy całego zbioru danych i generuje jeden z werdyktów:
+- 🚨 **ATAK SIECIOWY / SZTUCZNE OBCIĄŻENIE (DDoS / Scraper Botnet):** Wykryto masowy ruch z adresów o wysokim Threat Score generujących błędy 500/403.
+- ⚠️ **WZMOŻONY RUCH AUTOMATYCZNY / CRAWLERY:** Ruch zdominowany przez boty komercyjne, indeksowanie SEO lub AI Scrapery bez cech destrukcyjnych.
+- ℹ️ **NATURALNY WZROST ZAINTERESOWANIA (Ruch Prawidłowy):** Wzrost zapytań pochodzi od rzeczywistych użytkowników z dominacją polskich operatorów telekomunikacyjnych i prawidłową strukturą pobierania zasobów.
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+---
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+### 6. Mechanizm Pracy na Żywym Serwerze i Pamięć Podręczna (Cache)
 
-## License
-For open source projects, say how it is licensed.
+- **Ochrona przed nieskończonym czytaniem (Live-Tail Safe):** Podczas pracy na aktywnym serwerze HTTPD pliki logów stale rosną. Program w momencie startu wykonuje migawkę (`os.stat().st_size`) i kończy parsowanie dokładnie na zapamiętanym offsecie, co zapobiega pętlom i zawieszeniu analizy.
+- **Pamięć podręczna (`.traffic_analyzer_cache.json`):** W przypadku analizowania wielu plików historycznych lub zrotowanych archiwów `.gz`, skrót metadanych (rozmiar, `mtime`, filtr daty, konfiguracja) jest zapisywany w cache. Ponowne uruchomienie analizy na milionach wpisów skraca czas wykonania z kilkunastu sekund do poniżej **0.5 sekundy**.
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+---
+
+## Generowane Pliki i Raporty
+
+Po zakończeniu analizy w katalogu docelowym generowane są 3 kluczowe artefakty:
+
+### 1. `traffic_analysis_report.html`
+Nowoczesny, samodzielny dashboard HTML zoptymalizowany pod kątem przeglądania lokalnego (`file://`) oraz przez serwer WWW.
+- **Wykres osi czasu:** W pełni interaktywny wykres liniowy z możliwością płynnego powiększania kółkiem myszy/gestami oraz nawigacji przyciskami (←, →, +, -, ↺).
+- **Mapy Leaflet:** Wizualizacja geograficzna z zaznaczeniem źródeł złośliwego ruchu kolorem czerwonym.
+- **Dedykowana tabela Blacklist:** Zestawienie zidentyfikowanych agresorów z dokładnym wykazem powodów blokady.
+- **Kompletna baza IP:** Przeszukiwalna tabela wszystkich adresów ponad progiem z paginacją DataTables.
+
+### 2. `blacklist_ips.txt`
+Czysty plik tekstowy zawierający listę unikalnych złośliwych adresów IP (wraz z komentarzami o kraju, operatorze i Threat Score). Plik można bezpośrednio załadować do reguł firewall:
+
+```bash
+# Przykład blokady w Linux iptables / ipset:
+ipset create blacklist hash:ip
+while read ip; do [[ ! "$ip" =~ ^# ]] && ipset add blacklist "$ip"; done < blacklist_ips.txt
+iptables -I INPUT -m set --match-set blacklist src -j DROP
+```
+
+### 3. `apache_block_rules.conf`
+Gotowy plik konfiguracyjny do dołączenia do konfiguracji Apache VirtualHost (`Include /path/to/apache_block_rules.conf`):
+
+```apache
+# Blokada adresów IP (Apache 2.4+)
+<RequireAll>
+    Require all granted
+    Require not ip 20.207.202.183
+    Require not ip 104.47.18.190
+    ...
+</RequireAll>
+
+# Blokada złośliwych narzędzi i scraperów
+BrowserMatchNoCase "HeadlessChrome" block_bad_bot
+BrowserMatchNoCase "Python-urllib" block_bad_bot
+Order Allow,Deny
+Allow from all
+Deny from env=block_bad_bot
+```
+
+---
+
+## Licencja i Bezpieczeństwo
+
+Program przetwarza logi w trybie **tylko do odczytu** – nie modyfikuje oryginalnych plików serwera ani nie wymaga uprawnień roota do samej analizy. Geolokalizacja odbywa się w 100% lokalnie, co gwarantuje pełną prywatność i zgodność z RODO/GDPR.
