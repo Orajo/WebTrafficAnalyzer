@@ -1346,6 +1346,120 @@ class WebTrafficAnalyzer:
         chart_asn_labels = [clean_string(a[0][:25]) for a in top_asns]
         chart_asn_values = [a[1] for a in top_asns]
 
+        # Przygotowanie komponentów HTML (bezpieczne dla wszystkich wersji Pythona < 3.12)
+        summary_points_html = ''.join(f'<li>{p}</li>' for p in diag['summary_points'])
+
+        if diag.get('whitelisted_entries'):
+            whitelist_joined = ", ".join(diag["whitelisted_entries"])
+            whitelist_banner_html = (
+                f'<div class="alert alert-light border shadow-sm py-2 px-3 d-flex justify-content-between align-items-center mb-4">\n'
+                f'    <div>\n'
+                f'        <i class="fa-solid fa-shield-halved text-success me-2"></i>\n'
+                f'        <strong>Aktywna Biała Lista IP (Wykluczone z analizy):</strong> <code class="text-dark bg-white border px-2 py-1 rounded">{whitelist_joined}</code>\n'
+                f'        <span class="ms-2 text-muted">| Wykluczono: <strong>{diag["whitelisted_requests"]:,}</strong> żądań z <strong>{diag["whitelisted_ips_count"]}</strong> zaufanych IP</span>\n'
+                f'    </div>\n'
+                f'    <span class="badge bg-success"><i class="fa-solid fa-check me-1"></i>Biała Lista Aktywna</span>\n'
+                f'</div>'
+            )
+        else:
+            whitelist_banner_html = ''
+
+        if diag['badge'] == 'ATTACK_DETECTED':
+            verdict_icon = 'fa-triangle-exclamation'
+        elif diag['badge'] == 'SEARCH_INDEXING':
+            verdict_icon = 'fa-robot'
+        else:
+            verdict_icon = 'fa-circle-check'
+
+        url_table_rows_list = []
+        for u in self.exceeded_urls[:100]:
+            badge_500 = 'bg-danger' if u['status_500'] > 0 else 'bg-light text-dark'
+            badge_403 = 'bg-warning text-dark' if u['status_403'] > 0 else 'bg-light text-dark'
+            median_ratio = f"{u['count']/self.url_median:.1f}" if self.url_median else "0"
+            url_table_rows_list.append(
+                f"<tr>"
+                f"<td><code class=\"text-dark fw-bold\">{clean_string(u['url'])}</code></td>"
+                f"<td><span class=\"badge bg-secondary\">{clean_string(u['section'])}</span></td>"
+                f"<td><strong>{u['count']:,}</strong></td>"
+                f"<td>{u['unique_ips']:,}</td>"
+                f"<td><span class=\"badge {badge_500}\">{u['status_500']:,}</span></td>"
+                f"<td><span class=\"badge {badge_403}\">{u['status_403']:,}</span></td>"
+                f"<td><span class=\"badge bg-danger\">Przekroczony ({median_ratio}x mediana)</span></td>"
+                f"</tr>"
+            )
+        url_table_rows = '\n'.join(url_table_rows_list)
+
+        blacklist_table_rows_list = []
+        for ip_item in self.exceeded_ips:
+            if ip_item['ip'] in self.ips_to_blacklist:
+                badge_err = 'bg-danger' if ip_item['status_500'] > 0 else 'bg-warning text-dark'
+                err_sum = ip_item['status_500'] + ip_item['status_403']
+                reasons_str = clean_string('; '.join(ip_item['threat_reasons']))
+                top_ua_str = clean_string(ip_item['top_ua'])
+                top_ua_short = clean_string(ip_item['top_ua'][:40])
+                country_code_lower = ip_item['country_code'].lower()
+                country_name = clean_string(ip_item['country_name'])
+                isp_name = clean_string(ip_item['isp'])
+                ua_label = clean_string(ip_item['ua_label'])
+                blacklist_table_rows_list.append(
+                    f"<tr>"
+                    f"<td><strong class=\"text-danger\">{ip_item['ip']}</strong></td>"
+                    f"<td><span class=\"fi fi-{country_code_lower}\"></span> {country_name} ({ip_item['country_code']})</td>"
+                    f"<td><small class=\"fw-semibold\">{isp_name}</small><br><span class=\"badge bg-light text-dark\">{ip_item['asn']}</span></td>"
+                    f"<td><span class=\"badge {ip_item['badge_class']}\">{ua_label}</span></td>"
+                    f"<td><strong>{ip_item['page_requests']:,}</strong></td>"
+                    f"<td>{ip_item['static_requests']:,}</td>"
+                    f"<td><span class=\"badge {badge_err}\">{err_sum} ({ip_item['error_rate']}%)</span></td>"
+                    f"<td>"
+                    f"<div class=\"progress mb-1\" style=\"height: 16px;\">"
+                    f"<div class=\"progress-bar bg-danger\" style=\"width: {ip_item['threat_score']}%;\">"
+                    f"{ip_item['threat_score']}%"
+                    f"</div>"
+                    f"</div>"
+                    f"<small class=\"text-muted d-block\" style=\"font-size: 0.75rem;\">{reasons_str}</small>"
+                    f"</td>"
+                    f"<td><small class=\"text-muted\" title=\"{top_ua_str}\">{top_ua_short}...</small></td>"
+                    f"</tr>"
+                )
+        blacklist_table_rows = '\n'.join(blacklist_table_rows_list)
+
+        ip_table_rows_list = []
+        for ip_item in self.exceeded_ips:
+            ip_color_cls = 'text-danger' if ip_item['ip'] in self.ips_to_blacklist else 'text-primary'
+            country_code_lower = ip_item['country_code'].lower()
+            country_name = clean_string(ip_item['country_name'])
+            isp_name = clean_string(ip_item['isp'])
+            ua_label = clean_string(ip_item['ua_label'])
+            badge_err = 'bg-danger' if ip_item['status_500'] > 0 else 'bg-light text-dark'
+            err_sum = ip_item['status_500'] + ip_item['status_403']
+            bar_color = 'bg-danger' if ip_item['threat_score'] >= 50 else ('bg-warning' if ip_item['threat_score'] >= 30 else 'bg-success')
+            top_ua_str = clean_string(ip_item['top_ua'])
+            top_ua_short = clean_string(ip_item['top_ua'][:40])
+            ip_table_rows_list.append(
+                f"<tr>"
+                f"<td><strong class=\"{ip_color_cls}\">{ip_item['ip']}</strong></td>"
+                f"<td><span class=\"fi fi-{country_code_lower}\"></span> {country_name} ({ip_item['country_code']})</td>"
+                f"<td><small class=\"fw-semibold\">{isp_name}</small><br><span class=\"badge bg-light text-dark\">{ip_item['asn']}</span></td>"
+                f"<td><span class=\"badge {ip_item['badge_class']}\">{ua_label}</span></td>"
+                f"<td><strong>{ip_item['page_requests']:,}</strong></td>"
+                f"<td>{ip_item['static_requests']:,}</td>"
+                f"<td><span class=\"badge {badge_err}\">{err_sum} ({ip_item['error_rate']}%)</span></td>"
+                f"<td>"
+                f"<div class=\"progress\" style=\"height: 16px;\">"
+                f"<div class=\"progress-bar {bar_color}\" style=\"width: {ip_item['threat_score']}%;\">"
+                f"{ip_item['threat_score']}%"
+                f"</div>"
+                f"</div>"
+                f"</td>"
+                f"<td><small class=\"text-muted\" title=\"{top_ua_str}\">{top_ua_short}...</small></td>"
+                f"</tr>"
+            )
+        ip_table_rows = '\n'.join(ip_table_rows_list)
+
+        apache_bot_rules = ''.join(f'    SetEnvIfNoCase User-Agent "{bot}" bad_bot=1\n' for bot in self.suspected_bots_to_block)
+        apache_ip_rules = ''.join(f'    Require not ip {ip}\n' for ip in sorted(self.ips_to_blacklist)[:100])
+        iptables_rules = ''.join(f'iptables -A INPUT -s {ip} -j DROP\n' for ip in sorted(self.ips_to_blacklist)[:50])
+
         # Generowanie HTML
         html = f"""<!DOCTYPE html>
 <html lang="pl">
@@ -1496,26 +1610,19 @@ class WebTrafficAnalyzer:
         <!-- Baner Główny Werdyktu -->
         <div class="verdict-banner {diag['badge']}">
             <div class="d-flex align-items-center mb-2">
-                <i class="fa-solid {'fa-triangle-exclamation' if diag['badge']=='ATTACK_DETECTED' else ('fa-robot' if diag['badge']=='SEARCH_INDEXING' else 'fa-circle-check')} fa-2x me-3"></i>
+                <i class="fa-solid {verdict_icon} fa-2x me-3"></i>
                 <h3 class="mb-0 fw-bold">{diag['verdict']}</h3>
             </div>
             <p class="mb-3 opacity-90 fs-6">Pewność oceny: <strong>{diag['confidence']}</strong> | Analiza heurystyczna na podstawie rozkładu IP, User-Agent, statusów 500 oraz stosunku zapytań dynamicznych do statycznych.</p>
             <div class="bg-white bg-opacity-10 p-3 rounded">
                 <ul class="mb-0 ps-3">
-                    {''.join(f'<li>{p}</li>' for p in diag['summary_points'])}
+                    {summary_points_html}
                 </ul>
             </div>
         </div>
 
         <!-- Baner Białej Listy IP -->
-        {f'''<div class="alert alert-light border shadow-sm py-2 px-3 d-flex justify-content-between align-items-center mb-4">
-            <div>
-                <i class="fa-solid fa-shield-halved text-success me-2"></i>
-                <strong>Aktywna Biała Lista IP (Wykluczone z analizy):</strong> <code class="text-dark bg-white border px-2 py-1 rounded">{", ".join(diag["whitelisted_entries"])}</code>
-                <span class="ms-2 text-muted">| Wykluczono: <strong>{diag["whitelisted_requests"]:,}</strong> żądań z <strong>{diag["whitelisted_ips_count"]}</strong> zaufanych IP</span>
-            </div>
-            <span class="badge bg-success"><i class="fa-solid fa-check me-1"></i>Biała Lista Aktywna</span>
-        </div>''' if diag.get('whitelisted_entries') else ''}
+        {whitelist_banner_html}
 
         <!-- Karty KPI -->
         <div class="row">
@@ -1710,15 +1817,7 @@ class WebTrafficAnalyzer:
                             </tr>
                         </thead>
                         <tbody>
-                            {''.join(f"""<tr>
-                                <td><code class="text-dark fw-bold">{clean_string(u['url'])}</code></td>
-                                <td><span class="badge bg-secondary">{clean_string(u['section'])}</span></td>
-                                <td><strong>{u['count']:,}</strong></td>
-                                <td>{u['unique_ips']:,}</td>
-                                <td><span class="badge {'bg-danger' if u['status_500'] > 0 else 'bg-light text-dark'}">{u['status_500']:,}</span></td>
-                                <td><span class="badge {'bg-warning text-dark' if u['status_403'] > 0 else 'bg-light text-dark'}">{u['status_403']:,}</span></td>
-                                <td><span class="badge bg-danger">Przekroczony ({u['count']/self.url_median:.1f}x mediana)</span></td>
-                            </tr>""" for u in self.exceeded_urls[:100])}
+                            {url_table_rows}
                         </tbody>
                     </table>
                 </div>
@@ -1749,24 +1848,7 @@ class WebTrafficAnalyzer:
                             </tr>
                         </thead>
                         <tbody>
-                            {''.join(f"""<tr>
-                                <td><strong class="text-danger">{ip_item['ip']}</strong></td>
-                                <td><span class="fi fi-{ip_item['country_code'].lower()}"></span> {clean_string(ip_item['country_name'])} ({ip_item['country_code']})</td>
-                                <td><small class="fw-semibold">{clean_string(ip_item['isp'])}</small><br><span class="badge bg-light text-dark">{ip_item['asn']}</span></td>
-                                <td><span class="badge {ip_item['badge_class']}">{clean_string(ip_item['ua_label'])}</span></td>
-                                <td><strong>{ip_item['page_requests']:,}</strong></td>
-                                <td>{ip_item['static_requests']:,}</td>
-                                <td><span class="badge {'bg-danger' if ip_item['status_500'] > 0 else 'bg-warning text-dark'}">{ip_item['status_500'] + ip_item['status_403']} ({ip_item['error_rate']}%)</span></td>
-                                <td>
-                                    <div class="progress mb-1" style="height: 16px;">
-                                        <div class="progress-bar bg-danger" style="width: {ip_item['threat_score']}%;">
-                                            {ip_item['threat_score']}%
-                                        </div>
-                                    </div>
-                                    <small class="text-muted d-block" style="font-size: 0.75rem;">{clean_string('; '.join(ip_item['threat_reasons']))}</small>
-                                </td>
-                                <td><small class="text-muted" title="{clean_string(ip_item['top_ua'])}">{clean_string(ip_item['top_ua'][:40])}...</small></td>
-                            </tr>""" for ip_item in self.exceeded_ips if ip_item['ip'] in self.ips_to_blacklist)}
+                            {blacklist_table_rows}
                         </tbody>
                     </table>
                 </div>
@@ -1796,23 +1878,7 @@ class WebTrafficAnalyzer:
                             </tr>
                         </thead>
                         <tbody>
-                            {''.join(f"""<tr>
-                                <td><strong class="{'text-danger' if ip_item['ip'] in self.ips_to_blacklist else 'text-primary'}">{ip_item['ip']}</strong></td>
-                                <td><span class="fi fi-{ip_item['country_code'].lower()}"></span> {clean_string(ip_item['country_name'])} ({ip_item['country_code']})</td>
-                                <td><small class="fw-semibold">{clean_string(ip_item['isp'])}</small><br><span class="badge bg-light text-dark">{ip_item['asn']}</span></td>
-                                <td><span class="badge {ip_item['badge_class']}">{clean_string(ip_item['ua_label'])}</span></td>
-                                <td><strong>{ip_item['page_requests']:,}</strong></td>
-                                <td>{ip_item['static_requests']:,}</td>
-                                <td><span class="badge {'bg-danger' if ip_item['status_500'] > 0 else 'bg-light text-dark'}">{ip_item['status_500'] + ip_item['status_403']} ({ip_item['error_rate']}%)</span></td>
-                                <td>
-                                    <div class="progress" style="height: 16px;">
-                                        <div class="progress-bar {'bg-danger' if ip_item['threat_score']>=50 else ('bg-warning' if ip_item['threat_score']>=30 else 'bg-success')}" style="width: {ip_item['threat_score']}%;">
-                                            {ip_item['threat_score']}%
-                                        </div>
-                                    </div>
-                                </td>
-                                <td><small class="text-muted" title="{clean_string(ip_item['top_ua'])}">{clean_string(ip_item['top_ua'][:40])}...</small></td>
-                            </tr>""" for ip_item in self.exceeded_ips)}
+                            {ip_table_rows}
                         </tbody>
                     </table>
                 </div>
@@ -1831,15 +1897,13 @@ class WebTrafficAnalyzer:
                         <p class="small text-muted mb-2">Poniższe reguły blokują zidentyfikowane złośliwe boty oraz podejrzane adresy IP:</p>
                         <pre id="apacheRules" class="code-block"># --- Blokada Złośliwych Botów i Scraperów ---
 &lt;IfModule mod_setenvif.c&gt;
-{''.join(f'    SetEnvIfNoCase User-Agent "{bot}" bad_bot=1\\n' for bot in self.suspected_bots_to_block)}
-    SetEnvIfNoCase User-Agent "^$" bad_bot=1
+{apache_bot_rules}    SetEnvIfNoCase User-Agent "^$" bad_bot=1
 &lt;/IfModule&gt;
 
 &lt;RequireAll&gt;
     Require all granted
     Require not env bad_bot
-{''.join(f'    Require not ip {ip}\\n' for ip in sorted(self.ips_to_blacklist)[:100])}
-&lt;/RequireAll&gt;</pre>
+{apache_ip_rules}&lt;/RequireAll&gt;</pre>
                     </div>
                 </div>
             </div>
@@ -1852,8 +1916,7 @@ class WebTrafficAnalyzer:
                     <div class="card-body">
                         <p class="small text-muted mb-2">Gotowe polecenia iptables do szybkiego odcięcia ruchu atakującego na poziomie jądra systemu:</p>
                         <pre id="iptablesRules" class="code-block"># Polecenia Linux iptables:
-{''.join(f'iptables -A INPUT -s {ip} -j DROP\\n' for ip in sorted(self.ips_to_blacklist)[:50])}
-# ... pobierz pełny plik blacklist_ips.txt dla wszystkich {len(self.ips_to_blacklist)} adresów</pre>
+{iptables_rules}# ... pobierz pełny plik blacklist_ips.txt dla wszystkich {len(self.ips_to_blacklist)} adresów</pre>
                     </div>
                 </div>
             </div>
