@@ -9,6 +9,9 @@ Program generuje interaktywne raporty HTML z mapami geograficznymi (OpenStreetMa
 ## Spis treści
 - [Główne Możliwości](#główne-możliwości)
 - [Wymagania i Instalacja](#wymagania-i-instalacja)
+  - [Automatyczna Instalacja na Nowym Serwerze (`install.sh`)](#automatyczna-instalacja-na-nowym-serwerze-installsh)
+  - [Instalacja Ręczna](#instalacja-ręczna)
+- [Plik Konfiguracyjny (`config.py`)](#plik-konfiguracyjny-configpy)
 - [Szybki Start](#szybki-start)
 - [Parametry Wiersza Poleceń (CLI)](#parametry-wiersza-poleceń-cli)
 - [Przykłady Użycia](#przykłady-użycia)
@@ -46,7 +49,54 @@ Program generuje interaktywne raporty HTML z mapami geograficznymi (OpenStreetMa
 - Python 3.8 lub nowszy
 - System operacyjny: Linux (zalecany na produkcji) lub Windows / macOS
 
-### Instalacja bibliotek Python
+### Automatyczna Instalacja na Nowym Serwerze (`install.sh`)
+
+Jeśli program ma zostać uruchomiony na serwerze, na którym nie był on wcześniej zainstalowany (brak Pythona, pip, biblioteki `geoip2`/`numpy` itp.), najprostszym sposobem jest użycie dołączonego skryptu `install.sh`. Skrypt automatycznie **sprawdza, co jest już zainstalowane, i doinstalowuje wyłącznie brakujące elementy** - jest bezpieczny do wielokrotnego uruchamiania.
+
+Skrypt wykonuje kolejno:
+1. **Sprawdzenie Pythona 3.8+** - jeśli go brakuje, próbuje zainstalować go automatycznie za pomocą wykrytego menedżera pakietów systemu (`apt-get`, `dnf`, `yum`, `zypper` lub `apk`).
+2. **Sprawdzenie `pip`** - w razie braku uruchamia `ensurepip` lub instaluje pakiet systemowy `python3-pip`.
+3. **Utworzenie wirtualnego środowiska** (`.venv`) - domyślnie, aby nie ingerować w systemowe pakiety Pythona (można to wyłączyć opcją `--system`).
+4. **Sprawdzenie bibliotek `geoip2` i `numpy`** - importuje je testowo i instaluje tylko te, których faktycznie brakuje.
+5. **Utworzenie pliku `config.py`** z `config.dist.py`, jeśli `config.py` jeszcze nie istnieje.
+6. **Weryfikację obecności baz GeoLite2** (`GeoLite2-Country.mmdb`, `GeoLite2-ASN.mmdb`) w katalogu programu i standardowych ścieżkach systemowych - jeśli ich brak, wyświetla ostrzeżenie z odnośnikiem do pobrania.
+
+#### Krok po kroku: wdrożenie na nowym serwerze Linux
+
+```bash
+# 1. Skopiuj repozytorium na docelowy serwer (np. przez git clone lub scp/rsync)
+git clone <adres-repozytorium> web_traffic_analyzer
+cd web_traffic_analyzer
+
+# 2. Nadaj uprawnienia do wykonania i uruchom skrypt instalacyjny
+chmod +x install.sh
+./install.sh
+
+# 3. Aktywuj utworzone wirtualne środowisko (jeśli nie użyto --system)
+source .venv/bin/activate
+
+# 4. Dostosuj plik config.py do nowego środowiska (biała lista IP, ścieżka/maska logów)
+nano config.py
+
+# 5. Uruchom program
+python3 web_traffic_analyzer.py
+```
+
+#### Opcje skryptu `install.sh`
+
+| Opcja | Opis |
+| :--- | :--- |
+| `--system` | Instaluje biblioteki Python globalnie (bez tworzenia wirtualnego środowiska `.venv`). |
+| `--venv DIR` | Tworzy/używa wirtualnego środowiska w podanym katalogu zamiast domyślnego `.venv`. |
+| `-h`, `--help` | Wyświetla pomoc i kończy działanie. |
+
+> **Uwaga:** Automatyczna instalacja pakietów systemowych (Python, pip) wymaga uprawnień `sudo`. Jeśli skrypt jest uruchamiany jako zwykły użytkownik bez dostępu do `sudo`, poproś administratora o wcześniejsze zainstalowanie Pythona 3.8+ i modułu `pip`, a następnie uruchom `install.sh` ponownie - doinstaluje on już tylko brakujące biblioteki Python.
+
+### Instalacja Ręczna
+
+Jeśli wolisz zainstalować zależności ręcznie (np. bez `install.sh`), wykonaj poniższe kroki.
+
+#### Instalacja bibliotek Python
 Zainstaluj wymagane pakiety za pomocą menedżera `pip`:
 
 ```bash
@@ -63,6 +113,36 @@ Bazy są automatycznie wyszukiwane w katalogu roboczym skryptu lub w standardowy
 - `/var/lib/GeoIP/`
 - `/etc/httpd/`
 - `/etc/apache2/`
+
+---
+
+## Plik Konfiguracyjny (`config.py`)
+
+Wszystkie ustawienia konfiguracyjne oraz domyślne wartości parametrów sterujących programem (biała lista IP, słowniki klasyfikacji User-Agent, współrzędne geograficzne, domyślne ścieżki/maski logów, progi statystyczne, wagi i progi silnika Threat Score, progi werdyktu diagnostycznego, limity raportów oraz konfiguracja kafelków mapy) zostały wydzielone z kodu `web_traffic_analyzer.py` do oddzielnego pliku `config.py`.
+
+Repozytorium zawiera dwa pliki konfiguracyjne:
+- **`config.py`** - rzeczywista konfiguracja używana przez program. Powinna być dostosowana do konkretnego wdrożenia/klienta (np. własna biała lista IP, maska logów danej domeny) i **nie powinna być commitowana** do repozytorium (patrz `.gitignore`).
+- **`config.dist.py`** - wzorcowa, dystrybucyjna wersja konfiguracji z neutralnymi, uniwersalnymi wartościami domyślnymi. Służy jako punkt odniesienia oraz wzór do utworzenia nowego pliku `config.py` przy wdrażaniu narzędzia w nowym środowisku.
+
+### Tworzenie pliku `config.py` od podstaw
+Jeśli plik `config.py` nie istnieje (np. przy pierwszym wdrożeniu lub aktualizacji), skopiuj plik dystrybucyjny i dostosuj wartości:
+
+```bash
+# Linux
+cp config.dist.py config.py
+```
+
+```powershell
+# Windows / PowerShell
+Copy-Item config.dist.py config.py
+```
+
+Następnie w nowo utworzonym `config.py` zaleca się dostosować co najmniej:
+- `DEFAULT_WHITELIST_IPS` - adresy IP/podsieci własnej infrastruktury (datacenter, monitoring) wykluczane z analizy.
+- `DEFAULT_LOG_MASK` oraz `DEFAULT_LOG_PATH` - maskę i ścieżkę plików logów danej domeny/serwera.
+- `MAP_TILE_URL` / `MAP_TILE_ATTRIBUTION` - w razie posiadania własnego klucza dostawcy kafelków mapy (np. CartoDB), aby uniknąć limitów darmowego serwera OpenStreetMap.
+
+Wszystkie wartości z `config.py` (w tym statystyczne progi i wagi scoringu zagrożeń) można dodatkowo nadpisać punktowo przy pojedynczym uruchomieniu za pomocą odpowiednich parametrów CLI (patrz sekcja [Parametry Wiersza Poleceń (CLI)](#parametry-wiersza-poleceń-cli)).
 
 ---
 
@@ -83,6 +163,8 @@ python3 web_traffic_analyzer.py -p /var/log/httpd -m "access_log*" -o /var/www/h
 ---
 
 ## Parametry Wiersza Poleceń (CLI)
+
+Wartości domyślne poniższych parametrów są wczytywane z pliku `config.py` (patrz sekcja [Plik Konfiguracyjny (`config.py`)](#plik-konfiguracyjny-configpy)) - podane w tabeli wartości odpowiadają bieżącej zawartości `config.py` w tym repozytorium i mogą różnić się od neutralnych wartości z `config.dist.py`.
 
 | Parametr krótki | Parametr długi | Domyślna wartość | Opis |
 | :--- | :--- | :--- | :--- |

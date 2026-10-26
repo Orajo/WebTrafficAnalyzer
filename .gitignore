@@ -1,0 +1,5 @@
+# Plik konfiguracyjny z ustawieniami specyficznymi dla danego wdrożenia/klienta
+# (biała lista IP, maska logów itp.) - nie powinien być commitowany do repozytorium.
+# Wzorcowa, dystrybucyjna wersja konfiguracji znajduje się w config.dist.py -
+# skopiuj go jako config.py i dostosuj wartości do własnego środowiska.
+config.py

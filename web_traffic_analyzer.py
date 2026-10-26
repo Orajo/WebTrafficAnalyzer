@@ -22,6 +22,16 @@ from collections import Counter, defaultdict
 from datetime import datetime
 import numpy as np
 
+import config
+from config import (
+    DEFAULT_WHITELIST_IPS, STATIC_EXTENSIONS,
+    SEARCH_ENGINE_BOTS, SEO_AND_AI_BOTS, SUSPICIOUS_TOOLS,
+    MONITORING_TOOL_KEYS, GENERIC_BOT_KEYWORDS,
+    UA_WEIGHT_EMPTY, UA_WEIGHT_SEARCH_BOT, UA_WEIGHT_SEO_AI_BOT,
+    UA_WEIGHT_MONITORING, UA_WEIGHT_SUSPICIOUS_TOOL, UA_WEIGHT_GENERIC_BOT,
+    UA_WEIGHT_HUMAN, COUNTRY_COORDS, POLISH_CITIES_COORDS, ISP_CITY_MAP
+)
+
 try:
     from geoip2.database import Reader
     from geoip2.errors import AddressNotFoundError
@@ -39,182 +49,9 @@ if sys.platform.startswith('win'):
 # ==============================================================================
 # KONFIGURACJA I SŁOWNIKI
 # ==============================================================================
-
-# Biała lista adresów IP i podsieci (CIDR) wykluczonych z analizy
-# (np. własne datacenter, serwery aplikacyjne, dedykowane systemy monitoringu)
-DEFAULT_WHITELIST_IPS = [
-    '217.153.27.58',  # Nasze datacenter
-]
-
-STATIC_EXTENSIONS = (
-    '.css', '.js', '.mjs', '.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp',
-    '.ico', '.bmp', '.tiff', '.woff', '.woff2', '.ttf', '.eot', '.otf',
-    '.map', '.mp4', '.mp3', '.avi', '.mov', '.wmv', '.flv', '.swf'
-)
-
-# Znane wyszukiwarki (autoryzowane boty)
-SEARCH_ENGINE_BOTS = {
-    'googlebot': 'Googlebot (Google Search)',
-    'bingbot': 'Bingbot (Microsoft Bing)',
-    'yandexbot': 'YandexBot (Yandex Search)',
-    'baiduspider': 'Baiduspider (Baidu Search)',
-    'duckduckbot': 'DuckDuckBot (DuckDuckGo)',
-    'slurp': 'Yahoo! Slurp',
-    'sogou': 'Sogou Spider',
-    'exabot': 'Exabot',
-    'facebookexternalhit': 'Facebook Crawler',
-    'facebot': 'Facebot',
-    'ia_archiver': 'Alexa / Internet Archive',
-    'twitterbot': 'TwitterBot',
-    'linkedinbot': 'LinkedInBot',
-    'applebot': 'Applebot',
-    'petalbot': 'PetalBot (Huawei Search)',
-    'qwantify': 'Qwantify (Qwant)',
-    'seznam': 'SeznamBot',
-    'coccoc': 'CocCoc Bot',
-    'mail.ru_bot': 'Mail.Ru Bot'
-}
-
-# Boty SEO, komercyjne, AI Scrapery
-SEO_AND_AI_BOTS = {
-    'ahrefsbot': 'AhrefsBot (SEO Crawler)',
-    'semrushbot': 'SemrushBot (SEO Crawler)',
-    'mj12bot': 'MJ12bot (Majestic SEO)',
-    'dotbot': 'DotBot (Moz SEO)',
-    'serpstatbot': 'SerpstatBot (SEO Crawler)',
-    'bytespider': 'ByteSpider (ByteDance / TikTok Scraper)',
-    'gptbot': 'GPTBot (OpenAI Web Scraper)',
-    'chatgpt-user': 'ChatGPT-User (OpenAI)',
-    'claudebot': 'ClaudeBot (Anthropic Scraper)',
-    'anthropic-ai': 'Anthropic AI Crawler',
-    'cohere-ai': 'Cohere AI Scraper',
-    'ccbot': 'CCBot (Common Crawl)',
-    'diffbot': 'Diffbot',
-    'blexbot': 'BLEXBot',
-    'turnitinbot': 'TurnitinBot',
-    'zoominfobot': 'ZoominfoBot',
-    'amazonbot': 'Amazonbot',
-    'applebot-extended': 'Applebot-Extended (Apple AI Training)',
-    'seekport': 'Seekport Crawler',
-    'reflectionbot': 'ReflectionBot (AI / Scraper)'
-}
-
-# Narzędzia skanujące, headless browsery, biblioteki skryptowe
-SUSPICIOUS_TOOLS = {
-    'headlesschrome': 'Headless Chrome (Automatyzacja/Scraper)',
-    'puppeteer': 'Puppeteer (Headless Browser)',
-    'playwright': 'Playwright (Headless Browser)',
-    'selenium': 'Selenium (Web Automation)',
-    'python-requests': 'Python Requests (Skrypt)',
-    'aiohttp': 'Python aiohttp (Skrypt)',
-    'httpx': 'Python HTTPX (Skrypt)',
-    'urllib': 'Python urllib (Skrypt)',
-    'curl': 'cURL (CLI Tool)',
-    'wget': 'Wget (CLI Tool)',
-    'go-http-client': 'Go HTTP Client (Skrypt)',
-    'java/': 'Java HTTP Client',
-    'apache-httpclient': 'Apache HttpClient',
-    'libwww-perl': 'Perl LWP',
-    'scrapy': 'Scrapy (Web Scraper)',
-    'sqlmap': 'SQLMap (Penetration Tool)',
-    'nikto': 'Nikto (Vulnerability Scanner)',
-    'nmap': 'Nmap Scripting Engine',
-    'masscan': 'Masscan Scanner',
-    'zgrab': 'ZGrab Scanner',
-    'censys': 'Censys Scanner',
-    'shodan': 'Shodan Scanner',
-    'nuclei': 'Nuclei Vulnerability Scanner',
-    'zabbix': 'Zabbix (Monitoring)',
-    'prometheus': 'Prometheus (Monitoring)'
-}
-
-# Współrzędne stolic/centrów krajów do mapy Leaflet
-COUNTRY_COORDS = {
-    'Poland': [52.2297, 21.0122], 'Polska': [52.2297, 21.0122], 'PL': [52.2297, 21.0122],
-    'United States': [37.0902, -95.7129], 'Stany Zjednoczone': [37.0902, -95.7129], 'US': [37.0902, -95.7129],
-    'Germany': [51.1657, 10.4515], 'Niemcy': [51.1657, 10.4515], 'DE': [51.1657, 10.4515],
-    'France': [46.2276, 2.2137], 'Francja': [46.2276, 2.2137], 'FR': [46.2276, 2.2137],
-    'United Kingdom': [55.3781, -3.4360], 'Wielka Brytania': [55.3781, -3.4360], 'GB': [55.3781, -3.4360],
-    'Netherlands': [52.1326, 5.2913], 'Holandia': [52.1326, 5.2913], 'NL': [52.1326, 5.2913],
-    'China': [35.8617, 104.1954], 'Chiny': [35.8617, 104.1954], 'CN': [35.8617, 104.1954],
-    'Russia': [61.5240, 105.3188], 'Rosja': [61.5240, 105.3188], 'RU': [61.5240, 105.3188],
-    'Ukraine': [48.3794, 31.1656], 'Ukraina': [48.3794, 31.1656], 'UA': [48.3794, 31.1656],
-    'Czech Republic': [49.8175, 15.4730], 'Czechy': [49.8175, 15.4730], 'CZ': [49.8175, 15.4730],
-    'Lithuania': [55.1694, 23.8813], 'Litwa': [55.1694, 23.8813], 'LT': [55.1694, 23.8813],
-    'Sweden': [60.1282, 18.6435], 'Szwecja': [60.1282, 18.6435], 'SE': [60.1282, 18.6435],
-    'Finland': [61.9241, 25.7482], 'Finlandia': [61.9241, 25.7482], 'FI': [61.9241, 25.7482],
-    'Italy': [41.8719, 12.5674], 'Włochy': [41.8719, 12.5674], 'IT': [41.8719, 12.5674],
-    'Spain': [40.4637, -3.7492], 'Hiszpania': [40.4637, -3.7492], 'ES': [40.4637, -3.7492],
-    'Canada': [56.1304, -106.3468], 'Kanada': [56.1304, -106.3468], 'CA': [56.1304, -106.3468],
-    'Brazil': [-14.2350, -51.9253], 'Brazylia': [-14.2350, -51.9253], 'BR': [-14.2350, -51.9253],
-    'India': [20.5937, 78.9629], 'Indie': [20.5937, 78.9629], 'IN': [20.5937, 78.9629],
-    'Japan': [36.2048, 138.2529], 'Japonia': [36.2048, 138.2529], 'JP': [36.2048, 138.2529],
-    'Australia': [-25.2744, 133.7751], 'Australia': [-25.2744, 133.7751], 'AU': [-25.2744, 133.7751],
-    'Singapore': [1.3521, 103.8198], 'Singapur': [1.3521, 103.8198], 'SG': [1.3521, 103.8198],
-    'Hong Kong': [22.3193, 114.1694], 'Hongkong': [22.3193, 114.1694], 'HK': [22.3193, 114.1694],
-    'Ireland': [53.1424, -7.6921], 'Irlandia': [53.1424, -7.6921], 'IE': [53.1424, -7.6921],
-    'Switzerland': [46.8182, 8.2275], 'Szwajcaria': [46.8182, 8.2275], 'CH': [46.8182, 8.2275],
-    'Austria': [47.5162, 14.5501], 'Austria': [47.5162, 14.5501], 'AT': [47.5162, 14.5501],
-    'Norway': [60.4720, 8.4689], 'Norwegia': [60.4720, 8.4689], 'NO': [60.4720, 8.4689],
-    'Romania': [45.9432, 24.9668], 'Rumunia': [45.9432, 24.9668], 'RO': [45.9432, 24.9668],
-    'Bulgaria': [42.7339, 25.4858], 'Bułgaria': [42.7339, 25.4858], 'BG': [42.7339, 25.4858],
-    'Seychelles': [-4.6796, 55.4920], 'Seszele': [-4.6796, 55.4920], 'SC': [-4.6796, 55.4920],
-    'Panama': [8.5379, -80.7821], 'Panama': [8.5379, -80.7821], 'PA': [8.5379, -80.7821],
-    'Cyprus': [35.1264, 33.4299], 'Cypr': [35.1264, 33.4299], 'CY': [35.1264, 33.4299],
-    'Vietnam': [14.0583, 108.2772], 'Wietnam': [14.0583, 108.2772], 'VN': [14.0583, 108.2772],
-    'Indonesia': [-0.7893, 113.9213], 'Indonezja': [-0.7893, 113.9213], 'ID': [-0.7893, 113.9213],
-    'Moldova': [47.4116, 28.3699], 'Mołdawia': [47.4116, 28.3699], 'MD': [47.4116, 28.3699],
-    'Unknown': [20.0, 0.0], 'Nieznany': [20.0, 0.0]
-}
-
-# Polskie lokalizacje i węzły sieciowe
-POLISH_CITIES_COORDS = {
-    'Warszawa': [52.2297, 21.0122],
-    'Kraków': [50.0647, 19.9450],
-    'Wrocław': [51.1079, 17.0385],
-    'Poznań': [52.4064, 16.9252],
-    'Gdańsk': [54.3520, 18.6466],
-    'Katowice': [50.2649, 19.0238],
-    'Łódź': [51.7592, 19.4560],
-    'Szczecin': [53.4285, 14.5528],
-    'Lublin': [51.2465, 22.5684],
-    'Białystok': [53.1325, 23.1688],
-    'Bydgoszcz': [53.1235, 18.0084],
-    'Rzeszów': [50.0412, 21.9991],
-    'Radom': [51.4027, 21.1471],
-    'Płock': [52.5463, 19.7065],
-    'Siedlce': [52.1678, 22.2901],
-    'Olsztyn': [53.7784, 20.4801],
-    'Toruń': [53.0138, 18.5984],
-    'Częstochowa': [50.8118, 19.1203],
-    'Gliwice': [50.2945, 18.6714],
-    'Kielce': [50.8661, 20.6286]
-}
-
-ISP_CITY_MAP = {
-    'orange': 'Warszawa',
-    'polkomtel': 'Warszawa',
-    'plus': 'Warszawa',
-    't-mobile': 'Warszawa',
-    'p4': 'Warszawa',
-    'play': 'Warszawa',
-    'upc': 'Warszawa',
-    'vectra': 'Gdynia',
-    'netia': 'Warszawa',
-    'inea': 'Poznań',
-    'toya': 'Łódź',
-    'multimedia': 'Gdynia',
-    'nask': 'Warszawa',
-    'pionier': 'Poznań',
-    'cyfronet': 'Kraków',
-    'task': 'Gdańsk',
-    'wcss': 'Wrocław',
-    'atman': 'Warszawa',
-    'exatel': 'Warszawa',
-    '3s': 'Katowice',
-    'korbank': 'Wrocław',
-    'petrotel': 'Płock'
-}
+# Wszystkie ustawienia konfiguracyjne i wartości domyślne parametrów sterujących
+# zostały wydzielone do oddzielnego pliku `config.py` (patrz też `config.dist.py`
+# - wzorcowa, dystrybucyjna wersja konfiguracji).
 
 def clean_string(s):
     if not isinstance(s, str):
@@ -316,7 +153,7 @@ def classify_user_agent(ua: str) -> dict:
             'is_crawler': False,
             'is_malicious': True,
             'bot_name': 'Empty User-Agent',
-            'threat_weight': 80
+            'threat_weight': UA_WEIGHT_EMPTY
         }
     
     ua_l = ua.lower()
@@ -331,7 +168,7 @@ def classify_user_agent(ua: str) -> dict:
                 'is_crawler': True,
                 'is_malicious': False,
                 'bot_name': key,
-                'threat_weight': 0
+                'threat_weight': UA_WEIGHT_SEARCH_BOT
             }
             
     # 2. Sprawdź roboty SEO / AI
@@ -344,13 +181,13 @@ def classify_user_agent(ua: str) -> dict:
                 'is_crawler': True,
                 'is_malicious': False,
                 'bot_name': key,
-                'threat_weight': 25
+                'threat_weight': UA_WEIGHT_SEO_AI_BOT
             }
             
     # 3. Sprawdź podejrzane narzędzia / headless
     for key, name in SUSPICIOUS_TOOLS.items():
         if key in ua_l:
-            is_monitoring = (key in ('zabbix', 'prometheus'))
+            is_monitoring = (key in MONITORING_TOOL_KEYS)
             return {
                 'category': 'SUSPICIOUS_TOOL' if not is_monitoring else 'MONITORING',
                 'label': name,
@@ -358,11 +195,11 @@ def classify_user_agent(ua: str) -> dict:
                 'is_crawler': False,
                 'is_malicious': not is_monitoring,
                 'bot_name': key,
-                'threat_weight': 10 if is_monitoring else 90
+                'threat_weight': UA_WEIGHT_MONITORING if is_monitoring else UA_WEIGHT_SUSPICIOUS_TOOL
             }
             
     # Inne ogólne wzorce botów
-    if any(b in ua_l for b in ('bot', 'spider', 'crawler', 'scraper', 'checker', 'scan', 'probe')):
+    if any(b in ua_l for b in GENERIC_BOT_KEYWORDS):
         return {
             'category': 'GENERIC_BOT',
             'label': f'Nieznany Bot ({clean_string(ua[:25])})',
@@ -370,7 +207,7 @@ def classify_user_agent(ua: str) -> dict:
             'is_crawler': True,
             'is_malicious': False,
             'bot_name': 'generic_bot',
-            'threat_weight': 40
+            'threat_weight': UA_WEIGHT_GENERIC_BOT
         }
         
     return {
@@ -380,7 +217,7 @@ def classify_user_agent(ua: str) -> dict:
         'is_crawler': False,
         'is_malicious': False,
         'bot_name': None,
-        'threat_weight': 0
+        'threat_weight': UA_WEIGHT_HUMAN
     }
 
 def resolve_city_pl(org: str) -> str:
@@ -584,11 +421,12 @@ def discover_log_files(path=None, mask=None, legacy_log_pattern=None):
 # ==============================================================================
 
 class WebTrafficAnalyzer:
-    def __init__(self, log_path='/var/log/httpd', log_mask='smartsite.mazovia.app-access.log*',
-                 log_pattern=None, country_db='GeoLite2-Country.mmdb', asn_db='GeoLite2-ASN.mmdb',
-                 url_threshold_mult=2.0, ip_threshold_mult=2.0, min_url_threshold=20, min_ip_threshold=20,
-                 filter_date=None, max_lines=None, whitelist=None,
-                 cache_file='.traffic_analyzer_cache.json', use_cache=True, clear_cache=False):
+    def __init__(self, log_path=config.DEFAULT_LOG_PATH, log_mask=config.DEFAULT_LOG_MASK,
+                 log_pattern=config.DEFAULT_LOG_PATTERN, country_db=config.DEFAULT_COUNTRY_DB, asn_db=config.DEFAULT_ASN_DB,
+                 url_threshold_mult=config.DEFAULT_URL_THRESHOLD_MULT, ip_threshold_mult=config.DEFAULT_IP_THRESHOLD_MULT,
+                 min_url_threshold=config.DEFAULT_MIN_URL_THRESHOLD, min_ip_threshold=config.DEFAULT_MIN_IP_THRESHOLD,
+                 filter_date=config.DEFAULT_FILTER_DATE, max_lines=config.DEFAULT_MAX_LINES, whitelist=None,
+                 cache_file=config.DEFAULT_CACHE_FILE, use_cache=True, clear_cache=False):
         self.log_path = log_path
         self.log_mask = log_mask
         self.log_pattern = log_pattern
@@ -975,10 +813,10 @@ class WebTrafficAnalyzer:
         if sec_counts:
             self.section_median = float(np.median(sec_counts))
             calc_sec_thresh = self.section_median * self.url_threshold_mult
-            self.section_threshold = max(calc_sec_thresh, float(self.min_url_threshold * 2))
+            self.section_threshold = max(calc_sec_thresh, float(self.min_url_threshold * config.SECTION_MIN_THRESHOLD_MULT))
         else:
             self.section_median = 0
-            self.section_threshold = self.min_url_threshold * 2
+            self.section_threshold = self.min_url_threshold * config.SECTION_MIN_THRESHOLD_MULT
 
         print(f"📊 Progi URL/Sekcje: Mediana URL = {self.url_median:.1f} -> Próg URL = {self.url_threshold:.1f} | Mediana Sekcji = {self.section_median:.1f} -> Próg Sekcji = {self.section_threshold:.1f}")
 
@@ -1058,27 +896,27 @@ class WebTrafficAnalyzer:
             reasons = []
             
             if ua_class['is_malicious']:
-                threat_score += 45
+                threat_score += config.THREAT_WEIGHT_MALICIOUS_UA
                 reasons.append(f"Podejrzany User-Agent ({ua_class['label']})")
             elif ua_class['is_bot'] and not ua_class['is_crawler']:
-                threat_score += 25
+                threat_score += config.THREAT_WEIGHT_AUTOMATION_TOOL
                 reasons.append("Narzędzie automatyzacji / skrypt")
                 
             # Brak pobierania zasobów statycznych (typowe dla botów i crawlerów)
-            if page_reqs > 50 and static_ratio < 0.05:
-                threat_score += 25
+            if page_reqs > config.MIN_PAGE_REQUESTS_FOR_STATIC_CHECK and static_ratio < config.STATIC_ASSET_RATIO_THRESHOLD:
+                threat_score += config.THREAT_WEIGHT_NO_STATIC_ASSETS
                 reasons.append("Brak pobierania zasobów graficznych/CSS/JS (czysty scraping/atak)")
                 
             # Wysoki odsetek błędów serwera generowanych przez dane IP
-            if err_rate > 15:
-                threat_score += 20
+            if err_rate > config.HIGH_ERROR_RATE_PERCENT_THRESHOLD:
+                threat_score += config.THREAT_WEIGHT_HIGH_ERROR_RATE
                 reasons.append(f"Wysoki odsetek błędów {err_rate:.1f}% (500/403/429)")
                 
             # Zagraniczne centra danych / serwery chmurowe (DigitalOcean, AWS, Hetzner itp.)
             org_l = geo_a['org'].lower()
-            if any(cloud in org_l for cloud in ('amazon', 'aws', 'google-cloud', 'digitalocean', 'hetzner', 'ovh', 'linode', 'alibaba', 'tencent', 'microsoft-corp', 'm247', 'host', 'datacenter', 'vultr')):
+            if any(cloud in org_l for cloud in config.CLOUD_DATACENTER_KEYWORDS):
                 if not ua_class['is_crawler']:
-                    threat_score += 20
+                    threat_score += config.THREAT_WEIGHT_CLOUD_DATACENTER
                     reasons.append(f"IP z centrum danych/chmury ({geo_a['org']})")
 
             threat_score = min(threat_score, 100)
@@ -1100,7 +938,7 @@ class WebTrafficAnalyzer:
             elif ua_class['category'] == 'SEARCH_BOT':
                 ip_type = 'SEARCH_ENGINE'
                 badge_class = 'badge-info'
-            elif threat_score >= 50 or ua_class['is_malicious']:
+            elif threat_score >= config.BLACKLIST_THREAT_SCORE_THRESHOLD or ua_class['is_malicious']:
                 ip_type = 'ATTACKER'
                 badge_class = 'badge-danger'
                 if not is_internal:
@@ -1109,8 +947,8 @@ class WebTrafficAnalyzer:
                 ip_type = 'SCRAPER_BOT'
                 badge_class = 'badge-warning'
             else:
-                ip_type = 'SUSPICIOUS_HEAVY_USER' if threat_score >= 30 else 'LEGITIMATE_USER'
-                badge_class = 'badge-primary' if threat_score < 30 else 'badge-warning'
+                ip_type = 'SUSPICIOUS_HEAVY_USER' if threat_score >= config.SUSPICIOUS_HEAVY_USER_THREAT_SCORE_THRESHOLD else 'LEGITIMATE_USER'
+                badge_class = 'badge-primary' if threat_score < config.SUSPICIOUS_HEAVY_USER_THREAT_SCORE_THRESHOLD else 'badge-warning'
 
             # Miasto dla ruchu PL
             city_pl = resolve_city_pl(geo_a['org']) if geo_c['code'] == 'PL' else None
@@ -1179,9 +1017,9 @@ class WebTrafficAnalyzer:
         is_crawler = False
         is_normal = False
         
-        if attacker_reqs > (0.25 * total_p) or err_500_pct > 3.0 or len(self.ips_to_blacklist) > 5:
+        if attacker_reqs > (config.VERDICT_ATTACK_REQUEST_RATIO * total_p) or err_500_pct > config.VERDICT_ERROR_500_PCT_THRESHOLD or len(self.ips_to_blacklist) > config.VERDICT_BLACKLIST_COUNT_THRESHOLD:
             is_attack = True
-        elif search_reqs > (0.40 * total_p):
+        elif search_reqs > (config.VERDICT_CRAWLER_REQUEST_RATIO * total_p):
             is_crawler = True
         else:
             is_normal = True
@@ -1228,7 +1066,7 @@ class WebTrafficAnalyzer:
             'whitelisted_entries': self.whitelist.get_entries()
         }
 
-    def generate_blacklist_file(self, output_path='blacklist_ips.txt'):
+    def generate_blacklist_file(self, output_path=config.DEFAULT_OUTPUT_BLACKLIST):
         """Zapis listy IP do zablokowania."""
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write("# ==========================================================\n")
@@ -1239,7 +1077,7 @@ class WebTrafficAnalyzer:
                 f.write(f"{ip}\n")
         print(f"📁 Zapisano listę IP do zablokowania: {output_path} ({len(self.ips_to_blacklist)} adresów)")
 
-    def generate_apache_rules_file(self, output_path='apache_block_rules.conf'):
+    def generate_apache_rules_file(self, output_path=config.DEFAULT_OUTPUT_APACHE_RULES):
         """Zapis reguł Apache blokujących boty i złośliwe IP."""
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write("# ==========================================================\n")
@@ -1258,7 +1096,7 @@ class WebTrafficAnalyzer:
             f.write("<RequireAll>\n")
             f.write("    Require all granted\n")
             f.write("    Require not env bad_bot\n")
-            for ip in sorted(self.ips_to_blacklist)[:500]: # max 500 do conf
+            for ip in sorted(self.ips_to_blacklist)[:config.APACHE_RULES_FILE_IP_LIMIT]:
                 f.write(f"    Require not ip {ip}\n")
             f.write("</RequireAll>\n\n")
             
@@ -1274,7 +1112,7 @@ class WebTrafficAnalyzer:
             f.write("</IfModule>\n")
         print(f"📁 Zapisano reguły Apache: {output_path}")
 
-    def generate_html_report(self, output_path='traffic_analysis_report.html'):
+    def generate_html_report(self, output_path=config.DEFAULT_OUTPUT_HTML):
         """Generowanie nowoczesnego raportu HTML z mapami Leaflet, wykresami Chart.js i DataTables."""
         # Przygotowanie danych do mapy krajów
         country_agg = defaultdict(lambda: {'count': 0, 'code': '', 'name_pl': '', 'attack_count': 0})
@@ -1372,7 +1210,7 @@ class WebTrafficAnalyzer:
             verdict_icon = 'fa-circle-check'
 
         url_table_rows_list = []
-        for u in self.exceeded_urls[:100]:
+        for u in self.exceeded_urls[:config.REPORT_URL_TABLE_LIMIT]:
             badge_500 = 'bg-danger' if u['status_500'] > 0 else 'bg-light text-dark'
             badge_403 = 'bg-warning text-dark' if u['status_403'] > 0 else 'bg-light text-dark'
             median_ratio = f"{u['count']/self.url_median:.1f}" if self.url_median else "0"
@@ -1457,8 +1295,8 @@ class WebTrafficAnalyzer:
         ip_table_rows = '\n'.join(ip_table_rows_list)
 
         apache_bot_rules = ''.join(f'    SetEnvIfNoCase User-Agent "{bot}" bad_bot=1\n' for bot in self.suspected_bots_to_block)
-        apache_ip_rules = ''.join(f'    Require not ip {ip}\n' for ip in sorted(self.ips_to_blacklist)[:100])
-        iptables_rules = ''.join(f'iptables -A INPUT -s {ip} -j DROP\n' for ip in sorted(self.ips_to_blacklist)[:50])
+        apache_ip_rules = ''.join(f'    Require not ip {ip}\n' for ip in sorted(self.ips_to_blacklist)[:config.REPORT_APACHE_IP_RULES_LIMIT])
+        iptables_rules = ''.join(f'iptables -A INPUT -s {ip} -j DROP\n' for ip in sorted(self.ips_to_blacklist)[:config.REPORT_IPTABLES_RULES_LIMIT])
 
         # Generowanie HTML
         html = f"""<!DOCTYPE html>
@@ -1987,12 +1825,11 @@ class WebTrafficAnalyzer:
             }});
         }}
 
-        // --- KONFIGURACJA KAFELKÓW MAPY (CartoDB Voyager / OpenStreetMap) ---
-        // CartoDB Voyager nie blokuje zapytań z refererów lokalnych / file:// w przeciwieństwie do publicznego serwera OSM tile
-        const tileLayerUrl = 'https://{{s}}.basemaps.cartocdn.com/rastertiles/voyager/{{z}}/{{x}}/{{y}}{{r}}.png?key=cb1_4t79_1_629c109cfb4f4bd4526a5bb3';
+        // --- KONFIGURACJA KAFELKÓW MAPY (adres i atrybucja wczytywane z config.py) ---
+        const tileLayerUrl = {json.dumps(config.MAP_TILE_URL)};
         const tileLayerOptions = {{
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">CARTO</a>',
-            subdomains: 'abcd',
+            attribution: {json.dumps(config.MAP_TILE_ATTRIBUTION)},
+            subdomains: {json.dumps(config.MAP_TILE_SUBDOMAINS)},
             maxZoom: 19
         }};
 
@@ -2201,36 +2038,36 @@ def main():
         description="Web Traffic Analyzer & DDoS / Bot Detector - Analiza logów Apache pod kątem anomalii i ataków (dostosowana do systemów Linux i Windows)."
     )
     parser.add_argument(
-        '-p', '--path', default='/var/log/httpd',
-        help="Ścieżka do katalogu z logami serwera lub pojedynczego pliku (domyślnie: /var/log/httpd)"
+        '-p', '--path', default=config.DEFAULT_LOG_PATH,
+        help=f"Ścieżka do katalogu z logami serwera lub pojedynczego pliku (domyślnie: {config.DEFAULT_LOG_PATH})"
     )
     parser.add_argument(
-        '-m', '--mask', default='smartsite.mazovia.app-access.log*',
-        help="Maska nazw plików logów we wskazanym katalogu (domyślnie: smartsite.mazovia.app-access.log*, np. '*access*.log*' lub 'access_log*')"
+        '-m', '--mask', default=config.DEFAULT_LOG_MASK,
+        help=f"Maska nazw plików logów we wskazanym katalogu (domyślnie: {config.DEFAULT_LOG_MASK}, np. '*access*.log*' lub 'access_log*')"
     )
     parser.add_argument(
-        '-l', '--log', default=None,
+        '-l', '--log', default=config.DEFAULT_LOG_PATTERN,
         help="Opcjonalny bezpośredni wzorzec pliku (np. 'logs/*.log', dla zachowania wstecznej kompatybilności)"
     )
     parser.add_argument(
-        '-o', '--output', '--output-html', dest='output', default='traffic_analysis_report.html',
-        help="Ścieżka do wyjściowego raportu HTML lub katalog docelowy na raporty (domyślnie: traffic_analysis_report.html w bieżącym katalogu)"
+        '-o', '--output', '--output-html', dest='output', default=config.DEFAULT_OUTPUT_HTML,
+        help=f"Ścieżka do wyjściowego raportu HTML lub katalog docelowy na raporty (domyślnie: {config.DEFAULT_OUTPUT_HTML} w bieżącym katalogu)"
     )
     parser.add_argument(
-        '-b', '--output-blacklist', default='blacklist_ips.txt',
-        help="Ścieżka lub nazwa pliku wyjściowego z blacklistą IP (domyślnie: blacklist_ips.txt)"
+        '-b', '--output-blacklist', default=config.DEFAULT_OUTPUT_BLACKLIST,
+        help=f"Ścieżka lub nazwa pliku wyjściowego z blacklistą IP (domyślnie: {config.DEFAULT_OUTPUT_BLACKLIST})"
     )
     parser.add_argument(
-        '--output-apache-rules', default='apache_block_rules.conf',
-        help="Ścieżka lub nazwa pliku z regułami Apache (domyślnie: apache_block_rules.conf)"
+        '--output-apache-rules', default=config.DEFAULT_OUTPUT_APACHE_RULES,
+        help=f"Ścieżka lub nazwa pliku z regułami Apache (domyślnie: {config.DEFAULT_OUTPUT_APACHE_RULES})"
     )
     parser.add_argument(
-        '-d', '--date', default=None,
+        '-d', '--date', default=config.DEFAULT_FILTER_DATE,
         help="Filtruj wpisy po dacie w formacie DD/Mon/YYYY (np. 23/Oct/2026) lub 'all' (domyślnie: wszystkie)"
     )
     parser.add_argument(
-        '--cache-file', default='.traffic_analyzer_cache.json',
-        help="Ścieżka do pliku pamięci podręcznej (domyślnie: .traffic_analyzer_cache.json)"
+        '--cache-file', default=config.DEFAULT_CACHE_FILE,
+        help=f"Ścieżka do pliku pamięci podręcznej (domyślnie: {config.DEFAULT_CACHE_FILE})"
     )
     parser.add_argument(
         '--no-cache', action='store_true',
@@ -2241,28 +2078,28 @@ def main():
         help="Czyści istniejącą pamięć podręczną przed rozpoczęciem analizy"
     )
     parser.add_argument(
-        '--country-db', default='GeoLite2-Country.mmdb',
+        '--country-db', default=config.DEFAULT_COUNTRY_DB,
         help="Ścieżka do bazy MaxMind GeoLite2-Country.mmdb"
     )
     parser.add_argument(
-        '--asn-db', default='GeoLite2-ASN.mmdb',
+        '--asn-db', default=config.DEFAULT_ASN_DB,
         help="Ścieżka do bazy MaxMind GeoLite2-ASN.mmdb"
     )
     parser.add_argument(
-        '--url-threshold-mult', type=float, default=2.0,
-        help="Mnożnik mediany dla progu URL (domyślnie: 2.0)"
+        '--url-threshold-mult', type=float, default=config.DEFAULT_URL_THRESHOLD_MULT,
+        help=f"Mnożnik mediany dla progu URL (domyślnie: {config.DEFAULT_URL_THRESHOLD_MULT})"
     )
     parser.add_argument(
-        '--ip-threshold-mult', type=float, default=2.0,
-        help="Mnożnik mediany dla progu IP (domyślnie: 2.0)"
+        '--ip-threshold-mult', type=float, default=config.DEFAULT_IP_THRESHOLD_MULT,
+        help=f"Mnożnik mediany dla progu IP (domyślnie: {config.DEFAULT_IP_THRESHOLD_MULT})"
     )
     parser.add_argument(
-        '--min-url-threshold', type=float, default=20.0,
-        help="Minimalny próg żądań dla URL (domyślnie: 20)"
+        '--min-url-threshold', type=float, default=config.DEFAULT_MIN_URL_THRESHOLD,
+        help=f"Minimalny próg żądań dla URL (domyślnie: {config.DEFAULT_MIN_URL_THRESHOLD:.0f})"
     )
     parser.add_argument(
-        '--min-ip-threshold', type=float, default=20.0,
-        help="Minimalny próg żądań dla IP (domyślnie: 20)"
+        '--min-ip-threshold', type=float, default=config.DEFAULT_MIN_IP_THRESHOLD,
+        help=f"Minimalny próg żądań dla IP (domyślnie: {config.DEFAULT_MIN_IP_THRESHOLD:.0f})"
     )
     parser.add_argument(
         '-w', '--whitelist', default=None,
@@ -2273,7 +2110,7 @@ def main():
         help="Ścieżka do pliku z białą listą adresów IP/podsieci (jeden wpis na linię)"
     )
     parser.add_argument(
-        '--max-lines', type=int, default=None,
+        '--max-lines', type=int, default=config.DEFAULT_MAX_LINES,
         help="Opcjonalny limit przetwarzanych linii (do szybkich testów)"
     )
 
@@ -2294,7 +2131,7 @@ def main():
     if os.path.isdir(output_target) or output_target.endswith('/') or output_target.endswith('\\'):
         out_dir = output_target.rstrip('/\\')
         os.makedirs(out_dir, exist_ok=True)
-        html_out = os.path.join(out_dir, 'traffic_analysis_report.html')
+        html_out = os.path.join(out_dir, config.DEFAULT_OUTPUT_HTML)
         blacklist_out = os.path.join(out_dir, os.path.basename(args.output_blacklist))
         apache_out = os.path.join(out_dir, os.path.basename(args.output_apache_rules))
     else:
